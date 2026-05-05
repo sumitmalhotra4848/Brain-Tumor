@@ -1,7 +1,7 @@
 """
-2026 CerebraScan: Brain Tumor Classifier
-Advanced AI-powered brain tumor detection with Explainable AI
-Features: Grad-CAM, Uncertainty Estimation, Radiomics Analysis
+2026 CerebraScan: Multi-Modal Brain Tumor Classifier
+Advanced AI-powered brain tumor detection using T1, T1ce, T2, and FLAIR MRI sequences
+Features: Grad-CAM, Uncertainty Estimation, Radiomics Analysis, Multi-Modal Fusion
 """
 
 import streamlit as st
@@ -31,13 +31,13 @@ warnings.filterwarnings("ignore")
 # ============================================================
 
 st.set_page_config(
-    page_title="2026 CerebraScan | Brain Tumor Classifier",
+    page_title="2026 CerebraScan | Multi-Modal Brain Tumor Classifier",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# Custom CSS for 2026 CerebraScan branding
+# Custom CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -80,57 +80,6 @@ st.markdown("""
         margin-top: 4px;
     }
     
-    .tagline {
-        color: #888;
-        font-size: 0.85rem;
-    }
-    
-    .main-title {
-        font-size: 2rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
-    }
-    
-    .subtitle {
-        color: #666;
-        margin-bottom: 2rem;
-    }
-    
-    .result-card {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border-radius: 20px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        border: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .confidence-high {
-        color: #00ff88;
-        font-size: 2rem;
-        font-weight: bold;
-    }
-    
-    .confidence-medium {
-        color: #f39c12;
-        font-size: 2rem;
-        font-weight: bold;
-    }
-    
-    .confidence-low {
-        color: #ff4444;
-        font-size: 2rem;
-        font-weight: bold;
-    }
-    
-    .prediction-label {
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin: 0.5rem 0;
-    }
-    
     .feature-badge {
         background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
         border-radius: 20px;
@@ -141,14 +90,21 @@ st.markdown("""
         font-weight: 500;
     }
     
-    .year-badge {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    .result-card {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
         border-radius: 20px;
-        padding: 0.25rem 1rem;
-        font-size: 0.7rem;
-        font-weight: 600;
-        color: white;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border: 1px solid rgba(255,255,255,0.1);
     }
+    
+    .confidence-high { color: #00ff88; font-size: 2rem; font-weight: bold; }
+    .confidence-medium { color: #f39c12; font-size: 2rem; font-weight: bold; }
+    .confidence-low { color: #ff4444; font-size: 2rem; font-weight: bold; }
+    .prediction-label { font-size: 1.5rem; font-weight: 600; margin: 0.5rem 0; }
+    .risk-low { color: #00ff88; }
+    .risk-moderate { color: #f39c12; }
+    .risk-high { color: #ff4444; }
     
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -159,26 +115,9 @@ st.markdown("""
         font-weight: 600;
         transition: all 0.3s ease;
     }
-    
     .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-    }
-    
-    .sample-btn {
-        background: #2d2d3a;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 12px;
-        padding: 0.5rem 1rem;
-        margin: 0.25rem;
-        text-align: center;
-        transition: all 0.3s;
-        cursor: pointer;
-    }
-    
-    .sample-btn:hover {
-        background: #3d3d4a;
-        transform: translateY(-2px);
     }
     
     .footer {
@@ -190,41 +129,30 @@ st.markdown("""
         border-top: 1px solid rgba(255,255,255,0.1);
     }
     
-    .novel-section {
-        background: linear-gradient(135deg, #667eea08 0%, #764ba208 100%);
-        border-radius: 16px;
-        padding: 1rem;
-        margin: 1rem 0;
-        border: 1px solid rgba(102, 126, 234, 0.2);
-    }
-    
-    .risk-low { color: #00ff88; }
-    .risk-moderate { color: #f39c12; }
-    .risk-high { color: #ff4444; }
-    
-    .stat-card {
+    .modality-tab {
         background: #1e1e2f;
-        border-radius: 12px;
-        padding: 0.75rem;
+        border-radius: 10px;
+        padding: 0.5rem;
         text-align: center;
-        border: 1px solid rgba(255,255,255,0.05);
+        cursor: pointer;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# Model Architecture
+# Model Architecture (Multi-Modal)
 # ============================================================
 
-class CerebraScanNet(nn.Module):
-    """2026 CerebraScan Deep Learning Model with Uncertainty Support"""
+class MultiModalBrainTumorClassifier(nn.Module):
+    """Multi-modal classifier accepting T1, T1ce, T2, FLAIR inputs"""
     def __init__(self, num_classes=4, dropout_rate=0.3):
         super().__init__()
         self.dropout_rate = dropout_rate
         
+        # Shared feature extractor for 4 input channels
         self.features = nn.Sequential(
             # Block 1
-            nn.Conv2d(3, 64, 3, padding=1),
+            nn.Conv2d(4, 64, 3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, 3, padding=1),
@@ -278,14 +206,24 @@ class CerebraScanNet(nn.Module):
         return output
     
     def enable_dropout(self):
-        """Enable dropout for Monte Carlo sampling"""
         for module in self.modules():
             if isinstance(module, nn.Dropout) or isinstance(module, nn.Dropout2d):
                 module.train()
 
 
+class ModalityReliabilityModule(nn.Module):
+    """Learns which MRI modality is most useful (Novel Feature)"""
+    def __init__(self, channels=4):
+        super().__init__()
+        self.conv = nn.Conv2d(channels, channels, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        weights = self.sigmoid(self.conv(x))
+        return x * weights
+
+
 class GradCAM:
-    """Gradient-weighted Class Activation Mapping"""
     def __init__(self, model, target_layer):
         self.model = model
         self.target_layer = target_layer
@@ -323,7 +261,33 @@ class GradCAM:
 
 
 # ============================================================
-# Novel Feature 1: Radiomics Extraction
+# Novel Feature 1: Modality Reliability Analysis
+# ============================================================
+
+def analyze_modality_reliability(image_tensor):
+    """Analyze SNR and reliability of each MRI modality"""
+    modality_names = ["T1", "T1ce", "T2", "FLAIR"]
+    reliability_scores = []
+    snr_values = []
+    
+    for c in range(4):
+        ch = image_tensor[:, c, :, :]
+        mu = ch.mean().item()
+        std = ch.std().item() + 1e-8
+        snr = abs(mu) / std
+        snr_values.append(snr)
+    
+    mean_snr = np.mean(snr_values)
+    for snr in snr_values:
+        rel = snr / (mean_snr + 1e-8)
+        reliability = float(torch.sigmoid(torch.tensor(rel - 0.5)).item())
+        reliability_scores.append(reliability)
+    
+    return modality_names, reliability_scores, snr_values
+
+
+# ============================================================
+# Novel Feature 2: Radiomics Extraction
 # ============================================================
 
 def extract_radiomics_features(image_array):
@@ -398,7 +362,7 @@ def calculate_radiomics_risk_score(features):
 
 
 # ============================================================
-# Novel Feature 2: Monte Carlo Uncertainty
+# Novel Feature 3: Monte Carlo Uncertainty
 # ============================================================
 
 def mc_dropout_predict(model, image_tensor, n_passes=30):
@@ -442,30 +406,46 @@ class_colors = {
 
 @st.cache_resource
 def load_model():
-    """Load the CerebraScan model"""
-    model = CerebraScanNet(num_classes=4, dropout_rate=0.3)
+    """Load the CerebraScan multi-modal model"""
+    model = MultiModalBrainTumorClassifier(num_classes=4, dropout_rate=0.3)
     model.eval()
     return model
 
 
-def preprocess_image(image):
-    """Preprocess image for model input"""
+def preprocess_image(image, target_size=(224, 224)):
+    """Preprocess single image for model input"""
     if isinstance(image, (str, bytes)):
-        image = Image.open(image).convert('RGB')
+        image = Image.open(image).convert('L')  # Convert to grayscale
     elif isinstance(image, np.ndarray):
-        image = Image.fromarray(image).convert('RGB')
+        image = Image.fromarray(image).convert('L')
     
-    original_size = image.size
-    image_resized = image.resize((224, 224))
+    image = image.resize(target_size)
+    img_array = np.array(image).astype(np.float32) / 255.0
+    return img_array
+
+
+def create_multi_modal_tensor(t1_img, t1ce_img, t2_img, flair_img):
+    """Create 4-channel input tensor from all modalities"""
+    # Preprocess each modality
+    t1 = preprocess_image(t1_img)
+    t1ce = preprocess_image(t1ce_img)
+    t2 = preprocess_image(t2_img)
+    flair = preprocess_image(flair_img)
     
-    img_array = np.array(image_resized).astype(np.float32) / 255.0
-    img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0)
+    # Stack to create 4-channel image (C, H, W)
+    multi_modal = np.stack([t1, t1ce, t2, flair], axis=0)
     
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-    img_tensor = (img_tensor - mean) / std
+    # Convert to tensor and normalize
+    img_tensor = torch.from_numpy(multi_modal).float().unsqueeze(0)
     
-    return img_tensor, image_resized, original_size
+    # Normalize each channel
+    for c in range(4):
+        channel = img_tensor[0, c]
+        mean = channel.mean()
+        std = channel.std() + 1e-8
+        img_tensor[0, c] = (channel - mean) / std
+    
+    return img_tensor, (t1, t1ce, t2, flair)
 
 
 def predict_with_uncertainty(model, image_tensor, n_passes=30):
@@ -482,7 +462,7 @@ def predict_with_uncertainty(model, image_tensor, n_passes=30):
     # Monte Carlo uncertainty
     mc_probs, mc_std, mc_uncertainty = mc_dropout_predict(model, image_tensor, n_passes)
     
-    # Generate Grad-CAM
+    # Generate Grad-CAM on FLAIR-like representation
     target_layer = model.features[21]
     gradcam = GradCAM(model, target_layer)
     cam, _ = gradcam(image_tensor, pred_class)
@@ -500,11 +480,28 @@ def predict_with_uncertainty(model, image_tensor, n_passes=30):
 
 def create_gradcam_overlay(image, cam, alpha=0.5):
     """Create Grad-CAM overlay"""
-    cam_resized = np.array(Image.fromarray(cam).resize(image.size, Image.Resampling.BILINEAR))
+    if isinstance(image, np.ndarray):
+        img_array = image
+    else:
+        img_array = np.array(image) / 255.0
+    
+    # Ensure 2D
+    if len(img_array.shape) == 3:
+        img_array = img_array[:, :, 0]
+    
+    # Resize cam
+    from PIL import Image as PILImage
+    cam_resized = np.array(PILImage.fromarray(cam).resize((img_array.shape[1], img_array.shape[0]), PILImage.Resampling.BILINEAR))
     cam_norm = (cam_resized - cam_resized.min()) / (cam_resized.max() - cam_resized.min() + 1e-8)
+    
+    # Create heatmap
     heatmap = plt.cm.jet(cam_norm)[:, :, :3]
-    img_array = np.array(image) / 255.0
-    overlay = (1 - alpha) * img_array + alpha * heatmap
+    
+    # Convert grayscale to RGB
+    img_rgb = np.stack([img_array, img_array, img_array], axis=2)
+    
+    # Overlay
+    overlay = (1 - alpha) * img_rgb + alpha * heatmap
     overlay = np.clip(overlay, 0, 1)
     return overlay
 
@@ -519,8 +516,7 @@ def create_probability_chart(probabilities, uncertainties):
         marker_color=[class_colors[c] for c in class_names],
         text=[f"{p*100:.1f}%" for p in probabilities],
         textposition='outside',
-        name='Probability',
-        hovertemplate='<b>%{x}</b><br>Probability: %{y:.1%}<extra></extra>'
+        name='Probability'
     ))
     
     fig.add_trace(go.Scatter(
@@ -529,8 +525,7 @@ def create_probability_chart(probabilities, uncertainties):
         name='Uncertainty (±1σ)',
         mode='markers+lines',
         line=dict(color='#ff4444', dash='dash', width=2),
-        marker=dict(size=10, symbol='diamond', color='#ff4444'),
-        error_y=dict(type='data', array=uncertainties, visible=True, color='#ff4444')
+        marker=dict(size=10, symbol='diamond', color='#ff4444')
     ))
     
     fig.update_layout(
@@ -568,8 +563,7 @@ def create_radiomics_chart(features):
         y=list(radiomics_data.values()),
         marker_color='#667eea',
         text=[f"{v:.3f}" for v in radiomics_data.values()],
-        textposition='outside',
-        hovertemplate='<b>%{x}</b><br>Value: %{y:.3f}<extra></extra>'
+        textposition='outside'
     ))
     
     fig.update_layout(
@@ -586,8 +580,37 @@ def create_radiomics_chart(features):
     return fig
 
 
-def generate_pdf_report(image, prediction, confidence, probabilities, uncertainties, 
-                        gradcam_overlay, radiomics_features, risk_score, risk_label):
+def create_modality_reliability_chart(modality_names, reliability_scores):
+    """Create modality reliability bar chart"""
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=modality_names,
+        y=reliability_scores,
+        marker_color=['#3498db', '#e74c3c', '#2ecc71', '#f39c12'],
+        text=[f"{s:.3f}" for s in reliability_scores],
+        textposition='outside'
+    ))
+    
+    fig.update_layout(
+        title="Multi-Modal Reliability Analysis",
+        xaxis_title="MRI Modality",
+        yaxis_title="Reliability Score",
+        yaxis_range=[0, 1],
+        height=300,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+        yaxis=dict(gridcolor='rgba(255,255,255,0.1)')
+    )
+    
+    return fig
+
+
+def generate_pdf_report(processed_images, prediction, confidence, probabilities, uncertainties, 
+                        gradcam_overlay, radiomics_features, risk_score, risk_label,
+                        modality_names, reliability_scores):
     """Generate comprehensive PDF report"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -600,7 +623,7 @@ def generate_pdf_report(image, prediction, confidence, probabilities, uncertaint
     normal_style = ParagraphStyle('CustomNormal', parent=styles['Normal'], fontSize=10, spaceAfter=6)
     
     story = []
-    story.append(Paragraph("2026 CerebraScan: Brain MRI Analysis Report", title_style))
+    story.append(Paragraph("2026 CerebraScan: Multi-Modal Brain MRI Analysis Report", title_style))
     story.append(Spacer(1, 12))
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
     story.append(Spacer(1, 20))
@@ -618,14 +641,13 @@ def generate_pdf_report(image, prediction, confidence, probabilities, uncertaint
     story.append(Paragraph(f"<b>Risk Score:</b> {risk_score}/100 - {risk_label}", normal_style))
     story.append(Spacer(1, 20))
     
-    # Images
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_img:
-        image.save(tmp_img.name)
-        story.append(Paragraph("Input MRI Scan", heading_style))
-        story.append(ReportImage(tmp_img.name, width=3*inch, height=3*inch))
-        story.append(Spacer(1, 10))
-        os.unlink(tmp_img.name)
+    # Modality Reliability
+    story.append(Paragraph("Multi-Modal Reliability", heading_style))
+    for name, score in zip(modality_names, reliability_scores):
+        story.append(Paragraph(f"<b>{name}:</b> {score:.3f}", normal_style))
+    story.append(Spacer(1, 20))
     
+    # Grad-CAM
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_grad:
         gradcam_img = Image.fromarray((gradcam_overlay * 255).astype(np.uint8))
         gradcam_img.save(tmp_grad.name)
@@ -654,8 +676,7 @@ def generate_pdf_report(image, prediction, confidence, probabilities, uncertaint
     # Disclaimer
     story.append(Paragraph("Disclaimer", heading_style))
     story.append(Paragraph(
-        "This analysis is for research purposes only and should not be used for clinical diagnosis. "
-        "Always consult with a qualified medical professional for medical decisions.",
+        "This analysis is for research purposes only and should not be used for clinical diagnosis.",
         normal_style
     ))
     
@@ -669,114 +690,156 @@ def generate_pdf_report(image, prediction, confidence, probabilities, uncertaint
 # ============================================================
 
 def main():
-    # Header with 2026 CerebraScan branding
+    # Header
     st.markdown("""
     <div class="main-header">
         <div class="logo">
             <div class="logo-icon">🧠</div>
             <div>
                 <div class="logo-text">CerebraScan<span style="font-size: 0.8rem;">™</span></div>
-                <div class="logo-year">2026 Edition</div>
+                <div class="logo-year">2026 Edition | Multi-Modal AI</div>
             </div>
         </div>
         <div>
-            <span class="year-badge">v2.0.0</span>
+            <span class="feature-badge">🔍 Grad-CAM</span>
+            <span class="feature-badge">📊 MC Uncertainty</span>
+            <span class="feature-badge">🧬 Radiomics</span>
+            <span class="feature-badge">🎯 4-Modality Fusion</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("""
-    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 1rem;">
-        <div>
-            <h1 class="main-title">Brain MRI Tumor Classifier</h1>
-            <p class="subtitle">Upload a brain MRI scan and get a tumor-type prediction explained with Grad-CAM.</p>
-        </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <span class="feature-badge">🔍 Grad-CAM</span>
-            <span class="feature-badge">📊 Monte Carlo Uncertainty</span>
-            <span class="feature-badge">🧬 Radiomics Analysis</span>
-            <span class="feature-badge">🎯 99.7% Accuracy</span>
-        </div>
-    </div>
+    <h1 class="main-title" style="font-size: 1.75rem;">Multi-Modal Brain MRI Tumor Classifier</h1>
+    <p class="subtitle">Upload all four MRI sequences (T1, T1ce, T2, FLAIR) for comprehensive tumor analysis with explainable AI.</p>
     """, unsafe_allow_html=True)
     
     # Initialize session state
     if 'prediction_result' not in st.session_state:
         st.session_state.prediction_result = None
-    if 'current_image' not in st.session_state:
-        st.session_state.current_image = None
+    if 'processed_images' not in st.session_state:
+        st.session_state.processed_images = None
     
-    # Layout
-    left_col, right_col = st.columns([1, 1], gap="large")
-    
-    with left_col:
-        st.markdown("## Choose an MRI image")
+    # Sidebar for uploads
+    with st.sidebar:
+        st.markdown("## 📁 Upload MRI Sequences")
+        st.markdown("Please upload all four modalities for accurate analysis")
         
-        # Upload section
-        st.markdown("**Upload your scan**")
-        uploaded_file = st.file_uploader(
-            "Upload",
-            type=['jpg', 'jpeg', 'png'],
-            label_visibility="collapsed"
-        )
-        st.caption("10MB per file · JPG, JPEG, PNG")
+        t1_file = st.file_uploader("T1-weighted MRI", type=['jpg', 'jpeg', 'png', 'nii', 'nii.gz'], key="t1")
+        t1ce_file = st.file_uploader("T1 Contrast-Enhanced (T1ce)", type=['jpg', 'jpeg', 'png', 'nii', 'nii.gz'], key="t1ce")
+        t2_file = st.file_uploader("T2-weighted MRI", type=['jpg', 'jpeg', 'png', 'nii', 'nii.gz'], key="t2")
+        flair_file = st.file_uploader("FLAIR MRI", type=['jpg', 'jpeg', 'png', 'nii', 'nii.gz'], key="flair")
         
-        # Sample images section
-        st.markdown("**Or try a sample**")
-        sample_cols = st.columns(3)
+        st.markdown("---")
+        st.markdown("### Or try sample data")
         
-        sample_images = {
-            "Sample 1": "https://raw.githubusercontent.com/sartajbhuvaji/Brain-Tumor-Classification-Using-Deep-Learning/main/Data/Testing/pituitary/Te-pi_0010.jpg",
-            "Sample 2": "https://raw.githubusercontent.com/sartajbhuvaji/Brain-Tumor-Classification-Using-Deep-Learning/main/Data/Testing/glioma/Te-gl_0053.jpg",
-            "Sample 3": "https://raw.githubusercontent.com/sartajbhuvaji/Brain-Tumor-Classification-Using-Deep-Learning/main/Data/Testing/meningioma/Te-me_0019.jpg"
-        }
-        
-        for idx, (name, url) in enumerate(sample_images.items()):
-            with sample_cols[idx]:
-                if st.button(name, key=f"sample_{idx}", use_container_width=True):
-                    try:
-                        import requests
-                        response = requests.get(url, timeout=10)
-                        if response.status_code == 200:
-                            image = Image.open(io.BytesIO(response.content))
-                            st.session_state.current_image = image
-                            
-                            model = load_model()
-                            img_tensor, processed_img, orig_size = preprocess_image(image)
-                            result = predict_with_uncertainty(model, img_tensor, n_passes=30)
-                            st.session_state.prediction_result = result
-                            st.session_state.current_processed_img = processed_img
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"Error loading sample: {e}")
-        
-        if uploaded_file is not None:
-            try:
-                image = Image.open(uploaded_file)
-                st.session_state.current_image = image
-                
-                with st.spinner("Analyzing MRI scan with CerebraScan AI..."):
-                    model = load_model()
-                    img_tensor, processed_img, orig_size = preprocess_image(image)
-                    result = predict_with_uncertainty(model, img_tensor, n_passes=30)
-                    st.session_state.prediction_result = result
-                    st.session_state.current_processed_img = processed_img
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error processing image: {e}")
-    
-    with right_col:
-        st.markdown("## Result")
-        
-        if st.session_state.prediction_result is not None:
-            result = st.session_state.prediction_result
+        if st.button("📊 Load Sample MRI Set", use_container_width=True):
+            # Create sample images for demonstration
+            np.random.seed(42)
+            size = 224
+            # Create synthetic MRI-like images
+            t1_sample = (np.random.rand(size, size) * 0.3 + 0.5).astype(np.float32)
+            t1ce_sample = (np.random.rand(size, size) * 0.3 + 0.5).astype(np.float32)
+            t2_sample = (np.random.rand(size, size) * 0.3 + 0.5).astype(np.float32)
+            flair_sample = (np.random.rand(size, size) * 0.3 + 0.5).astype(np.float32)
             
+            # Add a "tumor" region
+            y, x = np.ogrid[:size, :size]
+            center = (size//2, size//2)
+            tumor_mask = (x - center[0])**2 + (y - center[1])**2 < 30**2
+            for arr in [t1_sample, t1ce_sample, t2_sample, flair_sample]:
+                arr[tumor_mask] = 0.9
+            
+            st.session_state.sample_images = (t1_sample, t1ce_sample, t2_sample, flair_sample)
+            st.rerun()
+        
+        st.markdown("---")
+        st.markdown("### 📖 About")
+        st.info("""
+        **CerebraScan 2026** uses a multi-modal deep learning model that analyzes all four MRI sequences simultaneously.
+        
+        **Input Requirements:**
+        - T1-weighted MRI
+        - T1 Contrast-Enhanced (T1ce)
+        - T2-weighted MRI  
+        - FLAIR MRI
+        
+        All images should be of the same slice/patient.
+        """)
+    
+    # Main content area
+    if st.sidebar.button("🧠 Run CerebraScan Analysis", type="primary", use_container_width=True):
+        # Check if we have all modalities
+        if 'sample_images' in st.session_state:
+            t1_img, t1ce_img, t2_img, flair_img = st.session_state.sample_images
+            use_sample = True
+        elif all([t1_file, t1ce_file, t2_file, flair_file]):
+            t1_img = Image.open(t1_file)
+            t1ce_img = Image.open(t1ce_file)
+            t2_img = Image.open(t2_file)
+            flair_img = Image.open(flair_file)
+            use_sample = False
+        else:
+            st.error("Please upload all four MRI modalities (T1, T1ce, T2, FLAIR) or load sample data")
+            st.stop()
+        
+        with st.spinner("Analyzing multi-modal MRI data with CerebraScan AI..."):
+            try:
+                # Create multi-modal tensor
+                img_tensor, processed_images = create_multi_modal_tensor(t1_img, t1ce_img, t2_img, flair_img)
+                
+                # Load model and predict
+                model = load_model()
+                result = predict_with_uncertainty(model, img_tensor, n_passes=30)
+                
+                # Analyze modality reliability
+                modality_names, reliability_scores, snr_values = analyze_modality_reliability(img_tensor)
+                
+                # Extract radiomics from FLAIR (most sensitive for tumors)
+                flair_array = processed_images[3]
+                radiomics_features = extract_radiomics_features(flair_array)
+                risk_score, risk_label, risk_class, risk_details = calculate_radiomics_risk_score(radiomics_features)
+                
+                # Generate Grad-CAM overlay on FLAIR
+                gradcam_overlay = create_gradcam_overlay(flair_array, result['gradcam'])
+                
+                # Store results
+                st.session_state.prediction_result = result
+                st.session_state.processed_images = processed_images
+                st.session_state.modality_names = modality_names
+                st.session_state.reliability_scores = reliability_scores
+                st.session_state.radiomics_features = radiomics_features
+                st.session_state.risk_score = risk_score
+                st.session_state.risk_label = risk_label
+                st.session_state.gradcam_overlay = gradcam_overlay
+                st.session_state.risk_details = risk_details
+                
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error processing images: {str(e)}")
+    
+    # Display results
+    if st.session_state.prediction_result is not None:
+        result = st.session_state.prediction_result
+        processed_images = st.session_state.processed_images
+        modality_names = st.session_state.modality_names
+        reliability_scores = st.session_state.reliability_scores
+        radiomics_features = st.session_state.radiomics_features
+        risk_score = st.session_state.risk_score
+        risk_label = st.session_state.risk_label
+        risk_class = risk_label.split()[0].lower()
+        
+        # Create tabs for different views
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Diagnosis", "🔬 Multi-Modal Views", "🧬 Radiomics", "🎯 AI Explainability"])
+        
+        with tab1:
+            # Prediction card
             prediction = result['prediction']
             confidence = result['confidence']
             uncertainty = result['uncertainty_score']
             color = class_colors[prediction]
             
-            # Confidence class for styling
             if confidence > 0.8:
                 confidence_class = "confidence-high"
             elif confidence > 0.6:
@@ -784,131 +847,128 @@ def main():
             else:
                 confidence_class = "confidence-low"
             
-            st.markdown(f"""
-            <div class="result-card">
-                <p style="color: #888; margin-bottom: 0;">Prediction</p>
-                <p class="prediction-label" style="color: {color};">{prediction}</p>
-                <p class="{confidence_class}">
-                    {confidence*100:.1f}%
-                </p>
-                <p style="color: #888; margin-top: 0.5rem;">confidence</p>
-                <p style="margin-top: 1rem;">{class_descriptions[prediction]}</p>
-                <hr style="margin: 1rem 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <p style="color: #888; margin-bottom: 0;">Model Uncertainty</p>
-                        <p style="font-size: 1.2rem; font-weight: bold; color: {'#00ff88' if uncertainty < 0.15 else '#f39c12' if uncertainty < 0.3 else '#ff4444'}">
-                            {uncertainty:.3f}
-                        </p>
-                    </div>
-                    <div>
-                        <span class="feature-badge">Monte Carlo Dropout (30 passes)</span>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
             
-            # Per-class probability with uncertainty
-            st.markdown("### Per-class probability")
-            fig = create_probability_chart(result['probabilities'], result['mc_uncertainty'])
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Grad-CAM visualization
-            if result['gradcam'] is not None and st.session_state.current_processed_img is not None:
-                st.markdown("### Grad-CAM model focus")
-                st.caption("Heatmap shows which regions influenced the prediction")
-                
-                gradcam_overlay = create_gradcam_overlay(
-                    st.session_state.current_processed_img, 
-                    result['gradcam']
-                )
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.image(st.session_state.current_processed_img, caption="Original MRI", use_container_width=True)
-                with col2:
-                    st.image(gradcam_overlay, caption="Grad-CAM Heatmap", use_container_width=True)
-                
-                st.session_state.gradcam_overlay = gradcam_overlay
-                
-                # Novel Feature: Radiomics Analysis
-                st.markdown("""
-                <div class="novel-section">
-                    <h4 style="margin: 0 0 0.5rem 0;">🧬 Radiomics Analysis</h4>
-                    <p style="color: #888; font-size: 0.8rem; margin-bottom: 1rem;">Texture and intensity-based tumor characterization</p>
+            with col1:
+                st.markdown(f"""
+                <div class="result-card">
+                    <p style="color: #888; margin-bottom: 0;">Prediction</p>
+                    <p class="prediction-label" style="color: {color};">{prediction}</p>
+                    <p class="{confidence_class}">{confidence*100:.1f}%</p>
+                    <p style="color: #888; margin-top: 0.5rem;">confidence</p>
+                    <p style="margin-top: 1rem;">{class_descriptions[prediction]}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # Extract radiomics from original image
-                img_array = np.array(st.session_state.current_processed_img.convert('L')) / 255.0
-                radiomics_features = extract_radiomics_features(img_array)
-                risk_score, risk_label, risk_class, risk_details = calculate_radiomics_risk_score(radiomics_features)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.markdown(f"""
-                    <div class="stat-card">
-                        <p style="color: #888; margin: 0;">Risk Score</p>
-                        <p class="{risk_class}" style="font-size: 1.5rem; font-weight: bold; margin: 0;">{risk_score}/100</p>
-                        <p style="color: #888; font-size: 0.7rem;">CerebraScan Index</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col2:
-                    st.markdown(f"""
-                    <div class="stat-card">
-                        <p style="color: #888; margin: 0;">Risk Assessment</p>
-                        <p class="{risk_class}" style="font-size: 1rem; font-weight: bold; margin: 0;">{risk_label}</p>
-                        <p style="color: #888; font-size: 0.7rem;">Clinical Priority</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col3:
-                    st.markdown(f"""
-                    <div class="stat-card">
-                        <p style="color: #888; margin: 0;">Tumor Regions</p>
-                        <p style="font-size: 1.5rem; font-weight: bold; margin: 0; color: #667eea;">{radiomics_features['num_regions']}</p>
-                        <p style="color: #888; font-size: 0.7rem;">Detected</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                fig_rad = create_radiomics_chart(radiomics_features)
-                st.plotly_chart(fig_rad, use_container_width=True)
-                
-                with st.expander("View Radiomics Details"):
-                    for detail in risk_details:
-                        st.markdown(f"- {detail}")
-                    st.markdown(f"**Max Region Size:** {radiomics_features['max_region_size']} pixels")
-                    st.markdown(f"**Mean Intensity:** {radiomics_features['mean_intensity']:.4f}")
-                    st.markdown(f"**Std Intensity:** {radiomics_features['std_intensity']:.4f}")
-                    st.markdown(f"**Textural Contrast:** {radiomics_features['contrast']:.2f}")
-                
-                st.session_state.radiomics_features = radiomics_features
-                st.session_state.risk_score = risk_score
-                st.session_state.risk_label = risk_label
+            
+            with col2:
+                st.markdown(f"""
+                <div class="result-card">
+                    <p style="color: #888; margin-bottom: 0;">Model Uncertainty</p>
+                    <p style="font-size: 1.5rem; font-weight: bold; color: {'#00ff88' if uncertainty < 0.15 else '#f39c12' if uncertainty < 0.3 else '#ff4444'}">
+                        {uncertainty:.3f}
+                    </p>
+                    <p style="color: #888;">Monte Carlo Dropout (30 passes)</p>
+                    <hr>
+                    <p style="color: #888; margin-bottom: 0;">Risk Assessment</p>
+                    <p class="{risk_class}" style="font-size: 1.2rem; font-weight: bold;">{risk_label} ({risk_score}/100)</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Probability chart
+            st.markdown("### Per-class Probability with Uncertainty")
+            fig = create_probability_chart(result['probabilities'], result['mc_uncertainty'])
+            st.plotly_chart(fig, use_container_width=True)
         
-        else:
-            st.info("👆 Upload an MRI scan or select a sample to see results")
+        with tab2:
+            st.markdown("### Multi-Modal MRI Views")
+            st.caption("All four MRI sequences analyzed simultaneously")
+            
+            col1, col2 = st.columns(2)
+            col3, col4 = st.columns(2)
+            
+            with col1:
+                st.image(processed_images[0], caption="T1-weighted", use_container_width=True, clamp=True)
+                st.caption(f"Reliability: {reliability_scores[0]:.3f}")
+            with col2:
+                st.image(processed_images[1], caption="T1 Contrast-Enhanced (T1ce)", use_container_width=True, clamp=True)
+                st.caption(f"Reliability: {reliability_scores[1]:.3f}")
+            with col3:
+                st.image(processed_images[2], caption="T2-weighted", use_container_width=True, clamp=True)
+                st.caption(f"Reliability: {reliability_scores[2]:.3f}")
+            with col4:
+                st.image(processed_images[3], caption="FLAIR", use_container_width=True, clamp=True)
+                st.caption(f"Reliability: {reliability_scores[3]:.3f}")
+            
+            # Modality reliability chart
+            st.markdown("### Modality Reliability Analysis")
+            fig = create_modality_reliability_chart(modality_names, reliability_scores)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with tab3:
+            st.markdown("### 🧬 Radiomics Analysis")
+            st.caption("Texture and intensity-based tumor characterization")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Risk Score", f"{risk_score}/100")
+            with col2:
+                st.metric("Risk Assessment", risk_label)
+            with col3:
+                st.metric("Tumor Regions", radiomics_features['num_regions'])
+            
+            fig = create_radiomics_chart(radiomics_features)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("View Detailed Radiomics Metrics"):
+                st.markdown(f"- **Mean Intensity:** {radiomics_features['mean_intensity']:.4f}")
+                st.markdown(f"- **Std Intensity:** {radiomics_features['std_intensity']:.4f}")
+                st.markdown(f"- **Skewness:** {radiomics_features['skewness']:.4f}")
+                st.markdown(f"- **Contrast:** {radiomics_features['contrast']:.2f}")
+                st.markdown(f"- **Energy:** {radiomics_features['energy']:.4f}")
+                st.markdown(f"- **Homogeneity:** {radiomics_features['homogeneity']:.4f}")
+                st.markdown(f"- **Max Region Size:** {radiomics_features['max_region_size']} pixels")
+            
+            st.markdown("**Clinical Findings:**")
+            for detail in st.session_state.risk_details:
+                st.markdown(f"- {detail}")
+        
+        with tab4:
+            st.markdown("### 🎯 Grad-CAM Model Focus")
+            st.caption("Heatmap shows which regions of the MRI influenced the prediction")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.image(processed_images[3], caption="FLAIR MRI (Input)", use_container_width=True, clamp=True)
+            with col2:
+                st.image(st.session_state.gradcam_overlay, caption="Grad-CAM Heatmap", use_container_width=True)
+            
+            st.markdown("""
+            **Interpretation:**
+            - 🔴 **Red regions** had the strongest influence on the prediction
+            - 🟡 **Yellow regions** had moderate influence
+            - 🔵 **Blue regions** had minimal influence on the decision
+            
+            This visualization helps radiologists understand which anatomical areas the model focused on.
+            """)
     
-    # Download report section
+    # Download report
     if st.session_state.prediction_result is not None:
         st.markdown("---")
-        st.markdown("### Download report")
-        st.caption("The PDF includes the uploaded image, Grad-CAM heatmap, prediction, per-class probabilities, uncertainty metrics, radiomics analysis, timestamp, and the disclaimer.")
-        
-        if st.button("📄 Download PDF Report", use_container_width=True):
-            result = st.session_state.prediction_result
-            image = st.session_state.current_image
-            
-            if 'gradcam_overlay' in st.session_state and 'radiomics_features' in st.session_state:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("📄 Download Complete PDF Report", use_container_width=True):
                 pdf_buffer = generate_pdf_report(
-                    image,
-                    result['prediction'],
-                    result['confidence'],
-                    result['probabilities'],
-                    result['mc_uncertainty'],
+                    st.session_state.processed_images,
+                    st.session_state.prediction_result['prediction'],
+                    st.session_state.prediction_result['confidence'],
+                    st.session_state.prediction_result['probabilities'],
+                    st.session_state.prediction_result['mc_uncertainty'],
                     st.session_state.gradcam_overlay,
                     st.session_state.radiomics_features,
                     st.session_state.risk_score,
-                    st.session_state.risk_label
+                    st.session_state.risk_label,
+                    st.session_state.modality_names,
+                    st.session_state.reliability_scores
                 )
                 
                 st.download_button(
@@ -923,7 +983,7 @@ def main():
     st.markdown("""
     <div class="footer">
         <p>⚠️ Disclaimer: This tool is for research purposes only. Not for clinical diagnosis.</p>
-        <p>🧠 CerebraScan™ 2026 | Powered by Deep Learning | 🔍 Grad-CAM | 📊 Monte Carlo Uncertainty | 🧬 Radiomics Analysis</p>
+        <p>🧠 CerebraScan™ 2026 | Multi-Modal AI | T1 · T1ce · T2 · FLAIR | Grad-CAM | Monte Carlo Uncertainty | Radiomics</p>
         <p>© 2026 CerebraScan. All rights reserved.</p>
     </div>
     """, unsafe_allow_html=True)
