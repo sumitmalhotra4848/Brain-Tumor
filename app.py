@@ -1,1002 +1,679 @@
-# app.py - Main Streamlit Dashboard
+"""
+Brain MRI Tumor Classifier
+Deep Learning based classification of brain tumors with Grad-CAM visualization
+"""
+
 import streamlit as st
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import nibabel as nib
 import matplotlib.pyplot as plt
 from PIL import Image
 import io
-import os
+import base64
+from datetime import datetime
+import plotly.graph_objects as go
+import plotly.express as px
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as ReportImage, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import tempfile
-from scipy import ndimage
+import os
 import warnings
 warnings.filterwarnings("ignore")
 
-# Page configuration
+# ============================================================
+# Page Configuration
+# ============================================================
+
 st.set_page_config(
-    page_title="Brain Tumor Segmentation Dashboard",
+    page_title="Brain MRI Tumor Classifier",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
+# Custom CSS for better styling
 st.markdown("""
 <style>
-    .main-header {
+    .main-title {
+        font-size: 2.5rem;
+        font-weight: 700;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 15px;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+    }
+    .subtitle {
+        color: #666;
         margin-bottom: 2rem;
+    }
+    .result-card {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 20px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .confidence-high {
+        color: #00ff88;
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    .confidence-low {
+        color: #ff4444;
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    .prediction-label {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 0.5rem 0;
+    }
+    .sample-btn {
+        background: #f0f2f6;
+        border: none;
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+        margin: 0.25rem;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .sample-btn:hover {
+        background: #e0e2e6;
+        transform: translateY(-2px);
+    }
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 0.5rem 2rem;
+        font-weight: 600;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        transition: 0.3s;
+    }
+    .probability-bar {
+        height: 8px;
+        border-radius: 4px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        margin: 0.5rem 0;
+    }
+    .footer {
         text-align: center;
-    }
-    .metric-card {
-        background: #1e1e2f;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-        border-left: 4px solid #00ff88;
-    }
-    .warning-card {
-        background: #2d1f1f;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 4px solid #ff4444;
-    }
-    .success-card {
-        background: #1f2d1f;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 4px solid #00ff88;
-    }
-    .stAlert {
-        border-radius: 10px;
+        color: #888;
+        font-size: 0.8rem;
+        margin-top: 3rem;
+        padding-top: 1rem;
+        border-top: 1px solid #eee;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# Model Definitions (from the notebook)
+# Model Architecture
 # ============================================================
 
-class ModalityReliability(nn.Module):
-    def __init__(self, channels=4):
+class BrainTumorClassifier(nn.Module):
+    """CNN classifier for brain tumor detection and classification"""
+    def __init__(self, num_classes=4):
         super().__init__()
-        self.conv = nn.Conv2d(channels, channels, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        weights = self.sigmoid(self.conv(x))
-        return x * weights
-
-
-class DoubleConv(nn.Module):
-    def __init__(self, in_ch, out_ch):
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
+        
+        # Feature extractor
+        self.features = nn.Sequential(
+            # Block 1
+            nn.Conv2d(3, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            
+            # Block 2
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            
+            # Block 3
+            nn.Conv2d(128, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            
+            # Block 4
+            nn.Conv2d(256, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d(1)
         )
-
+        
+        # Classifier
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(512, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(256, num_classes)
+        )
+        
     def forward(self, x):
-        return self.conv(x)
-
-
-class AttentionBlock(nn.Module):
-    def __init__(self, F_g, F_l, F_int):
-        super().__init__()
-        self.W_g = nn.Sequential(nn.Conv2d(F_g, F_int, 1), nn.BatchNorm2d(F_int))
-        self.W_x = nn.Sequential(nn.Conv2d(F_l, F_int, 1), nn.BatchNorm2d(F_int))
-        self.psi = nn.Sequential(nn.Conv2d(F_int, 1, 1), nn.Sigmoid())
-
-    def forward(self, g, x):
-        g1 = self.W_g(g)
-        x1 = self.W_x(x)
-        psi = self.psi(F.relu(g1 + x1))
-        return x * psi
-
-
-class BrainTumorSegmentationModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.modality_attention = ModalityReliability()
-        self.conv1 = DoubleConv(4, 64)
-        self.pool = nn.MaxPool2d(2)
-        self.conv2 = DoubleConv(64, 128)
-        self.up = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.att = AttentionBlock(64, 64, 32)
-        self.conv3 = DoubleConv(128, 64)
-        self.out = nn.Conv2d(64, 1, 1)
-
-    def forward(self, x):
-        x = self.modality_attention(x)
-        e1 = self.conv1(x)
-        e2 = self.conv2(self.pool(e1))
-        d1 = self.up(e2)
-        e1_att = self.att(d1, e1)
-        d1 = torch.cat([d1, e1_att], dim=1)
-        d1 = self.conv3(d1)
-        return torch.sigmoid(self.out(d1))
-
-
-class BrainTumorSegModelWithDropout(nn.Module):
-    def __init__(self, dropout_p=0.3):
-        super().__init__()
-        self.modality_attention = ModalityReliability()
-        self.conv1 = DoubleConv(4, 64)
-        self.pool = nn.MaxPool2d(2)
-        self.drop1 = nn.Dropout2d(p=dropout_p)
-        self.conv2 = DoubleConv(64, 128)
-        self.drop2 = nn.Dropout2d(p=dropout_p)
-        self.up = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.att = AttentionBlock(64, 64, 32)
-        self.conv3 = DoubleConv(128, 64)
-        self.drop3 = nn.Dropout2d(p=dropout_p)
-        self.out = nn.Conv2d(64, 1, 1)
-
-    def forward(self, x):
-        x = self.modality_attention(x)
-        e1 = self.conv1(x)
-        e1 = self.drop1(e1)
-        e2 = self.conv2(self.pool(e1))
-        e2 = self.drop2(e2)
-        d1 = self.up(e2)
-        e1_att = self.att(d1, e1)
-        d1 = torch.cat([d1, e1_att], dim=1)
-        d1 = self.drop3(self.conv3(d1))
-        return torch.sigmoid(self.out(d1))
+        features = self.features(x)
+        features = features.view(features.size(0), -1)
+        output = self.classifier(features)
+        return output
+    
+    def get_features(self, x):
+        """Get intermediate features for Grad-CAM"""
+        # Store intermediate activations
+        self.activations = []
+        self.gradients = []
+        
+        # Block 1
+        x = self.features[0](x)
+        x = self.features[1](x)
+        x = self.features[2](x)
+        x = self.features[3](x)
+        x = self.features[4](x)
+        x = self.features[5](x)
+        self.activations.append(x)
+        x = self.features[6](x)
+        
+        # Block 2
+        x = self.features[7](x)
+        x = self.features[8](x)
+        x = self.features[9](x)
+        x = self.features[10](x)
+        x = self.features[11](x)
+        x = self.features[12](x)
+        self.activations.append(x)
+        x = self.features[13](x)
+        
+        # Block 3
+        x = self.features[14](x)
+        x = self.features[15](x)
+        x = self.features[16](x)
+        x = self.features[17](x)
+        x = self.features[18](x)
+        x = self.features[19](x)
+        self.activations.append(x)
+        x = self.features[20](x)
+        
+        # Block 4 (last conv layer for Grad-CAM)
+        x = self.features[21](x)
+        x = self.features[22](x)
+        x = self.features[23](x)
+        x = self.features[24](x)
+        x = self.features[25](x)
+        self.last_conv = x
+        x = self.features[26](x)
+        x = self.features[27](x)
+        
+        features = x.view(x.size(0), -1)
+        output = self.classifier(features)
+        return output
 
 
 # ============================================================
-# Helper Functions
+# Grad-CAM Implementation
 # ============================================================
 
-def dice_loss(pred, target):
-    smooth = 1
-    intersection = (pred * target).sum()
-    return 1 - ((2 * intersection + smooth) / (pred.sum() + target.sum() + smooth))
+class GradCAM:
+    """Gradient-weighted Class Activation Mapping"""
+    def __init__(self, model, target_layer):
+        self.model = model
+        self.target_layer = target_layer
+        self.gradients = None
+        self.activations = None
+        
+    def save_gradient(self, grad):
+        self.gradients = grad
+        
+    def forward_hook(self, module, input, output):
+        self.activations = output
+        output.register_hook(self.save_gradient)
+        
+    def __call__(self, x, class_idx=None):
+        # Register hook
+        handle = self.target_layer.register_forward_hook(self.forward_hook)
+        
+        # Forward pass
+        output = self.model(x)
+        
+        if class_idx is None:
+            class_idx = torch.argmax(output).item()
+        
+        # Zero gradients
+        self.model.zero_grad()
+        
+        # Backward pass
+        one_hot = torch.zeros_like(output)
+        one_hot[0, class_idx] = 1
+        output.backward(gradient=one_hot, retain_graph=True)
+        
+        # Generate CAM
+        weights = torch.mean(self.gradients, dim=[2, 3], keepdim=True)
+        cam = torch.sum(weights * self.activations, dim=1, keepdim=True)
+        cam = F.relu(cam)
+        cam = F.interpolate(cam, size=x.shape[2:], mode='bilinear', align_corners=False)
+        cam = cam - cam.min()
+        cam = cam / (cam.max() + 1e-8)
+        
+        handle.remove()
+        
+        return cam.detach().cpu().numpy()[0, 0], class_idx
 
 
-def extract_radiomics(mri_slice, pred_mask_binary):
-    """Extract radiomic features from tumor region"""
-    tumor_pixels = mri_slice[pred_mask_binary > 0.5]
-    
-    if len(tumor_pixels) == 0:
-        return None
-    
-    features = {}
-    features["mean_intensity"] = float(np.mean(tumor_pixels))
-    features["std_intensity"] = float(np.std(tumor_pixels))
-    features["max_intensity"] = float(np.max(tumor_pixels))
-    features["min_intensity"] = float(np.min(tumor_pixels))
-    features["kurtosis"] = float(np.mean((tumor_pixels - features["mean_intensity"])**4) / (features["std_intensity"]**4 + 1e-8))
-    features["skewness"] = float(np.mean((tumor_pixels - features["mean_intensity"])**3) / (features["std_intensity"]**3 + 1e-8))
-    
-    labeled, num = ndimage.label(pred_mask_binary > 0.5)
-    features["tumor_area_pixels"] = int((pred_mask_binary > 0.5).sum())
-    features["num_connected_comp"] = int(num)
-    
-    from scipy.ndimage import binary_fill_holes
-    filled = binary_fill_holes(pred_mask_binary > 0.5)
-    features["solidity"] = float(features["tumor_area_pixels"] / (filled.sum() + 1e-8))
-    
-    from scipy.ndimage import uniform_filter
-    masked_mri = mri_slice * (pred_mask_binary > 0.5)
-    local_mean = uniform_filter(masked_mri, size=3)
-    local_var = uniform_filter(masked_mri**2, size=3) - local_mean**2
-    features["texture_energy"] = float(local_var[pred_mask_binary > 0.5].mean())
-    
-    return features
+# ============================================================
+# Utility Functions
+# ============================================================
 
+class_names = ["No Tumor", "Pituitary", "Glioma", "Meningioma"]
+class_descriptions = {
+    "No Tumor": "Healthy brain tissue. No tumor detected in the scan.",
+    "Pituitary": "Pituitary adenoma - typically benign tumor of the pituitary gland.",
+    "Glioma": "Glioma - tumor arising from glial cells. May require further evaluation.",
+    "Meningioma": "Meningioma - usually benign tumor arising from the meninges."
+}
 
-def tumor_aggressiveness_score(features):
-    """Calculate tumor aggressiveness score"""
-    if features is None:
-        return 0, "No tumor detected"
-    
-    score = 0
-    if features["std_intensity"] > 0.3: score += 25
-    elif features["std_intensity"] > 0.15: score += 15
-    
-    if features["tumor_area_pixels"] > 500: score += 20
-    elif features["tumor_area_pixels"] > 200: score += 10
-    
-    if features["num_connected_comp"] > 3: score += 20
-    elif features["num_connected_comp"] > 1: score += 10
-    
-    if features["solidity"] < 0.6: score += 20
-    elif features["solidity"] < 0.8: score += 10
-    
-    if features["texture_energy"] > 0.1: score += 15
-    
-    label = (
-        "Grade IV (Glioblastoma - High Risk)" if score >= 65 else
-        "Grade III (Anaplastic - Moderate-High Risk)" if score >= 40 else
-        "Grade II (Low-grade Glioma - Lower Risk)"
-    )
-    return score, label
+class_colors = {
+    "No Tumor": "#00ff88",
+    "Pituitary": "#f39c12",
+    "Glioma": "#e74c3c",
+    "Meningioma": "#3498db"
+}
 
-
-def mc_dropout_predict(model, image_tensor, n_passes=20):
-    """Monte Carlo Dropout for uncertainty estimation"""
-    model.train()
-    preds = []
-    with torch.no_grad():
-        for _ in range(n_passes):
-            preds.append(model(image_tensor).cpu().numpy())
+@st.cache_resource
+def load_model():
+    """Load the trained model"""
+    model = BrainTumorClassifier(num_classes=4)
+    
+    # For demo purposes, create random weights
+    # In production, load pretrained weights:
+    # model.load_state_dict(torch.load("model_weights.pth", map_location="cpu"))
+    
     model.eval()
-    preds = np.stack(preds, axis=0)
-    mean_pred = preds.mean(axis=0)
-    uncertainty = preds.std(axis=0)
-    return mean_pred, uncertainty
+    return model
 
 
-def detect_modality_corruption(image_tensor, z_thresh=2.5):
-    """Detect corrupted MRI modalities"""
-    MODALITY_NAMES = ["T1", "T2", "T1ce", "FLAIR"]
-    corruption_flags = []
-    reliability_scores = []
+def preprocess_image(image):
+    """Preprocess image for model input"""
+    if isinstance(image, (str, bytes)):
+        image = Image.open(image).convert('RGB')
+    elif isinstance(image, np.ndarray):
+        image = Image.fromarray(image).convert('RGB')
     
-    channel_snrs = []
-    for c in range(4):
-        ch = image_tensor[:, c, :, :]
-        mu = ch.mean().item()
-        std = ch.std().item() + 1e-8
-        snr = abs(mu) / std
-        channel_snrs.append(snr)
+    # Resize to 224x224
+    image = image.resize((224, 224))
     
-    mean_snr = np.mean(channel_snrs)
-    std_snr = np.std(channel_snrs) + 1e-8
+    # Convert to tensor and normalize
+    img_array = np.array(image).astype(np.float32) / 255.0
+    img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0)
     
-    alert_parts = []
-    for i, snr in enumerate(channel_snrs):
-        z_score = abs(snr - mean_snr) / std_snr
-        is_corrupted = (snr < 0.1) or (z_score > z_thresh and snr < mean_snr)
-        corruption_flags.append(is_corrupted)
-        rel = snr / (mean_snr + 1e-8)
-        reliability = float(torch.sigmoid(torch.tensor(rel - 0.5)).item())
-        reliability_scores.append(reliability)
-        if is_corrupted:
-            alert_parts.append(f"⚠️ [{MODALITY_NAMES[i]}] CORRUPTED (SNR={snr:.3f})")
+    # Normalize using ImageNet stats
+    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+    img_tensor = (img_tensor - mean) / std
     
-    if alert_parts:
-        alert_message = "\n".join(["🚨 MODALITY ALERT:"] + alert_parts)
-    else:
-        alert_message = "✅ All modalities appear healthy."
-    
-    return corruption_flags, reliability_scores, alert_message
+    return img_tensor, image
 
 
-def evaluate_metrics(pred, gt):
-    """Calculate segmentation metrics"""
-    pred = pred.flatten()
-    gt = gt.flatten()
-    TP = np.sum((pred == 1) & (gt == 1))
-    FP = np.sum((pred == 1) & (gt == 0))
-    FN = np.sum((pred == 0) & (gt == 1))
-    TN = np.sum((pred == 0) & (gt == 0))
+def predict(model, image_tensor, use_gradcam=True):
+    """Run prediction with optional Grad-CAM"""
+    model.eval()
     
-    dice = (2*TP) / (2*TP + FP + FN + 1e-8)
-    iou = TP / (TP + FP + FN + 1e-8)
-    precision = TP / (TP + FP + 1e-8)
-    recall = TP / (TP + FN + 1e-8)
-    accuracy = (TP + TN) / (TP + TN + FP + FN + 1e-8)
+    with torch.no_grad():
+        logits = model(image_tensor)
+        probabilities = F.softmax(logits, dim=1)
+        pred_class = torch.argmax(probabilities, dim=1).item()
+        confidence = probabilities[0, pred_class].item()
     
-    return dice, iou, precision, recall, accuracy
+    # Generate Grad-CAM
+    cam_image = None
+    if use_gradcam:
+        # Get last convolutional layer
+        target_layer = model.features[25]  # Last conv block
+        gradcam = GradCAM(model, target_layer)
+        cam, _ = gradcam(image_tensor, pred_class)
+        cam_image = cam
+    
+    return {
+        'prediction': class_names[pred_class],
+        'confidence': confidence,
+        'probabilities': probabilities[0].cpu().numpy(),
+        'logits': logits[0].cpu().numpy(),
+        'gradcam': cam_image
+    }
 
 
-def load_nifti_slice(file, slice_idx=None):
-    """Load a NIfTI file and extract a slice"""
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.nii') as tmp:
-        tmp.write(file.getvalue())
-        tmp_path = tmp.name
+def create_gradcam_overlay(image, cam, alpha=0.5):
+    """Create Grad-CAM overlay on original image"""
+    # Resize cam to image size
+    cam_resized = np.array(Image.fromarray(cam).resize(image.size, Image.Resampling.BILINEAR))
     
-    img = nib.load(tmp_path)
-    data = img.get_fdata()
-    os.unlink(tmp_path)
+    # Normalize cam to [0, 1]
+    cam_norm = (cam_resized - cam_resized.min()) / (cam_resized.max() - cam_resized.min() + 1e-8)
     
-    if slice_idx is None:
-        slice_idx = data.shape[2] // 2
+    # Create heatmap
+    heatmap = plt.cm.jet(cam_norm)[:, :, :3]
     
-    return data[:, :, slice_idx], slice_idx
+    # Convert image to array
+    img_array = np.array(image) / 255.0
+    
+    # Overlay
+    overlay = (1 - alpha) * img_array + alpha * heatmap
+    overlay = np.clip(overlay, 0, 1)
+    
+    return overlay
+
+
+def create_probability_chart(probabilities):
+    """Create probability bar chart using plotly"""
+    fig = go.Figure(data=[
+        go.Bar(
+            x=class_names,
+            y=probabilities,
+            marker_color=[class_colors[c] for c in class_names],
+            text=[f"{p*100:.1f}%" for p in probabilities],
+            textposition='outside',
+            name='Probability'
+        )
+    ])
+    
+    fig.update_layout(
+        title="Per-class Probability",
+        xaxis_title="Tumor Type",
+        yaxis_title="Probability",
+        yaxis_range=[0, 1],
+        height=400,
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+        yaxis=dict(gridcolor='rgba(255,255,255,0.1)')
+    )
+    
+    return fig
+
+
+def generate_pdf_report(image, prediction, confidence, probabilities, gradcam_overlay):
+    """Generate PDF report of the analysis"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#667eea'),
+        alignment=TA_CENTER,
+        spaceAfter=30
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#764ba2'),
+        spaceAfter=12
+    )
+    
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        parent=styles['Normal'],
+        fontSize=10,
+        spaceAfter=6
+    )
+    
+    # Build document
+    story = []
+    
+    # Title
+    story.append(Paragraph("Brain MRI Tumor Analysis Report", title_style))
+    story.append(Spacer(1, 12))
+    
+    # Timestamp
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+    story.append(Spacer(1, 20))
+    
+    # Prediction results
+    story.append(Paragraph("Diagnosis Summary", heading_style))
+    story.append(Paragraph(f"<b>Prediction:</b> {prediction}", normal_style))
+    story.append(Paragraph(f"<b>Confidence:</b> {confidence*100:.1f}%", normal_style))
+    story.append(Paragraph(f"<b>Clinical Note:</b> {class_descriptions[prediction]}", normal_style))
+    story.append(Spacer(1, 20))
+    
+    # Save and add images
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_img:
+        image.save(tmp_img.name)
+        img = ReportImage(tmp_img.name, width=3*inch, height=3*inch)
+        story.append(Paragraph("Input MRI Scan", heading_style))
+        story.append(img)
+        story.append(Spacer(1, 10))
+        os.unlink(tmp_img.name)
+    
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_grad:
+        gradcam_img = Image.fromarray((gradcam_overlay * 255).astype(np.uint8))
+        gradcam_img.save(tmp_grad.name)
+        grad_img = ReportImage(tmp_grad.name, width=3*inch, height=3*inch)
+        story.append(Paragraph("Grad-CAM Heatmap", heading_style))
+        story.append(grad_img)
+        story.append(Spacer(1, 10))
+        os.unlink(tmp_grad.name)
+    
+    # Probabilities table
+    story.append(Paragraph("Per-class Probabilities", heading_style))
+    prob_data = [["Tumor Type", "Probability"]]
+    for name, prob in zip(class_names, probabilities):
+        prob_data.append([name, f"{prob*100:.1f}%"])
+    
+    prob_table = Table(prob_data, colWidths=[2.5*inch, 1.5*inch])
+    prob_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+    ]))
+    story.append(prob_table)
+    story.append(Spacer(1, 20))
+    
+    # Disclaimer
+    story.append(Paragraph("Disclaimer", heading_style))
+    story.append(Paragraph(
+        "This analysis is for research purposes only and should not be used for clinical diagnosis. "
+        "Always consult with a qualified medical professional for medical decisions.",
+        normal_style
+    ))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
 
 # ============================================================
-# Session State Initialization
+# Main App UI
 # ============================================================
 
-if 'model' not in st.session_state:
-    st.session_state.model = None
-    st.session_state.mc_model = None
-    st.session_state.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-# ============================================================
-# Main Dashboard UI
-# ============================================================
-
-# Header
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
+def main():
+    # Header
+    st.markdown('<h1 class="main-title">🧠 Brain MRI Tumor Classifier</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Upload a brain MRI scan and get a tumor-type prediction explained with Grad-CAM.</p>', unsafe_allow_html=True)
+    
+    # Initialize session state
+    if 'prediction_result' not in st.session_state:
+        st.session_state.prediction_result = None
+    if 'current_image' not in st.session_state:
+        st.session_state.current_image = None
+    
+    # Create two columns for layout
+    left_col, right_col = st.columns([1, 1], gap="large")
+    
+    with left_col:
+        st.markdown("## Choose an MRI image")
+        
+        # Upload section
+        st.markdown("**Upload your scan**")
+        uploaded_file = st.file_uploader(
+            "Upload",
+            type=['jpg', 'jpeg', 'png'],
+            label_visibility="collapsed"
+        )
+        
+        st.caption("10MB per file · JPG, JPEG, PNG")
+        
+        # Sample images section
+        st.markdown("**Or try a sample**")
+        sample_cols = st.columns(3)
+        
+        sample_images = {
+            "Sample 1": "https://raw.githubusercontent.com/sartajbhuvaji/Brain-Tumor-Classification-Using-Deep-Learning/main/Data/Testing/pituitary/Te-pi_0010.jpg",
+            "Sample 2": "https://raw.githubusercontent.com/sartajbhuvaji/Brain-Tumor-Classification-Using-Deep-Learning/main/Data/Testing/glioma/Te-gl_0053.jpg",
+            "Sample 3": "https://raw.githubusercontent.com/sartajbhuvaji/Brain-Tumor-Classification-Using-Deep-Learning/main/Data/Testing/meningioma/Te-me_0019.jpg"
+        }
+        
+        for idx, (name, url) in enumerate(sample_images.items()):
+            with sample_cols[idx]:
+                if st.button(name, key=f"sample_{idx}", use_container_width=True):
+                    try:
+                        import requests
+                        response = requests.get(url, timeout=10)
+                        if response.status_code == 200:
+                            image = Image.open(io.BytesIO(response.content))
+                            st.session_state.current_image = image
+                            
+                            # Process prediction
+                            model = load_model()
+                            img_tensor, processed_img = preprocess_image(image)
+                            result = predict(model, img_tensor, use_gradcam=True)
+                            st.session_state.prediction_result = result
+                            st.session_state.current_processed_img = processed_img
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error loading sample: {e}")
+        
+        # Display uploaded image
+        if uploaded_file is not None:
+            try:
+                image = Image.open(uploaded_file)
+                st.session_state.current_image = image
+                
+                # Process prediction
+                with st.spinner("Analyzing MRI scan..."):
+                    model = load_model()
+                    img_tensor, processed_img = preprocess_image(image)
+                    result = predict(model, img_tensor, use_gradcam=True)
+                    st.session_state.prediction_result = result
+                    st.session_state.current_processed_img = processed_img
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error processing image: {e}")
+    
+    with right_col:
+        st.markdown("## Result")
+        
+        if st.session_state.prediction_result is not None:
+            result = st.session_state.prediction_result
+            
+            # Prediction display
+            prediction = result['prediction']
+            confidence = result['confidence']
+            color = class_colors[prediction]
+            
+            st.markdown(f"""
+            <div class="result-card">
+                <p style="color: #888; margin-bottom: 0;">Prediction</p>
+                <p class="prediction-label" style="color: {color};">{prediction}</p>
+                <p class="{'confidence-high' if confidence > 0.7 else 'confidence-low'}">
+                    {confidence*100:.1f}%
+                </p>
+                <p style="color: #888; margin-top: 0.5rem;">confidence</p>
+                <p style="margin-top: 1rem;">{class_descriptions[prediction]}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Probability chart
+            st.markdown("### Per-class probability")
+            fig = create_probability_chart(result['probabilities'])
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Grad-CAM visualization
+            if result['gradcam'] is not None and st.session_state.current_processed_img is not None:
+                st.markdown("### Grad-CAM model focus")
+                
+                gradcam_overlay = create_gradcam_overlay(
+                    st.session_state.current_processed_img, 
+                    result['gradcam']
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.image(st.session_state.current_processed_img, caption="Original MRI", use_container_width=True)
+                with col2:
+                    st.image(gradcam_overlay, caption="Grad-CAM Heatmap", use_container_width=True)
+                
+                # Store for PDF
+                st.session_state.gradcam_overlay = gradcam_overlay
+        else:
+            st.info("👆 Upload an MRI scan or select a sample to see results")
+    
+    # Download report section (below both columns)
+    if st.session_state.prediction_result is not None:
+        st.markdown("---")
+        st.markdown("### Download report")
+        st.caption("The PDF includes the uploaded image, Grad-CAM heatmap, prediction, per-class probabilities, timestamp, and the disclaimer.")
+        
+        if st.button("📄 Download PDF Report", use_container_width=True):
+            result = st.session_state.prediction_result
+            image = st.session_state.current_image
+            
+            if 'gradcam_overlay' in st.session_state:
+                pdf_buffer = generate_pdf_report(
+                    image,
+                    result['prediction'],
+                    result['confidence'],
+                    result['probabilities'],
+                    st.session_state.gradcam_overlay
+                )
+                
+                st.download_button(
+                    label="📥 Download PDF",
+                    data=pdf_buffer,
+                    file_name=f"brain_mri_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+    
+    # Footer
     st.markdown("""
-    <div class="main-header">
-        <h1 style="color: white; margin: 0;">🧠 Brain Tumor Segmentation</h1>
-        <p style="color: #e0e0e0; margin: 0;">AI-Powered Medical Image Analysis | Attention U-Net + Explainable AI</p>
+    <div class="footer">
+        <p>⚠️ Disclaimer: This tool is for research purposes only. Not for clinical diagnosis.</p>
+        <p>© 2024 Brain MRI Tumor Classifier | Powered by Deep Learning</p>
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("---")
 
-# Sidebar
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2934/2934414.png", width=80)
-    st.markdown("## 🧠 Navigation")
-    
-    page = st.radio(
-        "Select Page",
-        ["🏠 Home", "📊 Segmentation", "🎯 Novel Features", "📈 Performance", "📚 References"]
-    )
-    
-    st.markdown("---")
-    st.markdown("### ⚙️ Settings")
-    
-    use_mc_dropout = st.checkbox("Enable Uncertainty Estimation (MC Dropout)", value=True)
-    n_passes = st.slider("MC Dropout Passes", 5, 50, 20, disabled=not use_mc_dropout)
-    
-    st.markdown("---")
-    st.markdown("### 📖 About")
-    st.info(
-        "This dashboard implements a novel Attention U-Net for "
-        "brain tumor segmentation with:\n\n"
-        "• 🔍 Grad-CAM Explainability\n"
-        "• 📊 Uncertainty Estimation\n"
-        "• 🧬 Radiomic Feature Extraction\n"
-        "• 🚨 Cross-Modal Hallucination Detection"
-    )
-
-
-# ============================================================
-# Page: Home
-# ============================================================
-
-if page == "🏠 Home":
-    st.markdown("## 👋 Welcome to the Brain Tumor Segmentation Dashboard")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        ### 🎯 What This Tool Does
-        
-        This AI-powered system automatically segments brain tumors from 
-        multi-modal MRI scans (T1, T2, T1ce, FLAIR) using a novel 
-        Attention U-Net architecture.
-        
-        **Key Capabilities:**
-        - ✅ Automatic tumor detection and segmentation
-        - 🔍 Explainable AI with Grad-CAM heatmaps
-        - 📊 Uncertainty visualization
-        - 🧬 Tumor grade prediction via radiomics
-        - 🚨 Missing modality detection
-        """)
-    
-    with col2:
-        st.markdown("""
-        ### 🧠 How It Works
-        
-        1. **Upload** your MRI scan (NIfTI format)
-        2. **Process** through the Attention U-Net
-        3. **View** segmentation results and metrics
-        4. **Analyze** tumor characteristics
-        5. **Export** results for clinical review
-        
-        > 💡 **Tip:** The model was trained on BraTS 2020 dataset 
-        > and achieves high accuracy on brain tumor segmentation.
-        """)
-    
-    st.markdown("---")
-    
-    st.markdown("### 🏗️ Model Architecture")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        #### 🔬 Novel Components
-        
-        - **Modality Reliability Module** - Learns which MRI sequences are most informative
-        - **Attention Gates** - Focuses on tumor boundaries
-        - **Multi-modal Fusion** - Combines 4 MRI sequences intelligently
-        """)
-    
-    with col2:
-        st.markdown("""
-        #### 📊 Training Details
-        
-        - **Dataset:** BraTS 2020 (369 patients)
-        - **Loss Function:** Dice + BCE
-        - **Optimizer:** Adam (lr=1e-4)
-        - **Epochs:** 40
-        """)
-    
-    with col3:
-        st.markdown("""
-        #### 🎯 Performance
-        
-        - **Dice Score:** 0.933
-        - **IoU:** 0.874
-        - **Precision:** 0.882
-        - **Recall:** 0.990
-        """)
-    
-    st.markdown("---")
-    
-    st.markdown("### 🚀 Quick Start")
-    
-    st.info("""
-    1. Navigate to the **Segmentation** page
-    2. Upload a NIfTI file (.nii or .nii.gz) with the 4 MRI modalities
-    3. Click "Run Segmentation"
-    4. Explore the results and novel features!
-    """)
-
-
-# ============================================================
-# Page: Segmentation
-# ============================================================
-
-elif page == "📊 Segmentation":
-    st.markdown("## 🔬 Brain Tumor Segmentation")
-    st.markdown("Upload multi-modal MRI data for automated tumor segmentation")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.markdown("### 📁 Upload MRI Files")
-        
-        uploaded_files = {}
-        modalities = {
-            "T1": "T1-weighted MRI",
-            "T2": "T2-weighted MRI", 
-            "T1ce": "Contrast-enhanced T1",
-            "FLAIR": "FLAIR sequence"
-        }
-        
-        for mod, desc in modalities.items():
-            uploaded_files[mod] = st.file_uploader(
-                f"{mod} ({desc})",
-                type=['nii', 'nii.gz'],
-                key=f"upload_{mod}"
-            )
-        
-        slice_num = st.slider("Select Slice Index", 0, 200, 90)
-        
-        run_button = st.button("🚀 Run Segmentation", type="primary", use_container_width=True)
-    
-    with col2:
-        st.markdown("### 📋 Sample Data")
-        st.info(
-            "**BraTS Dataset Format:**\n\n"
-            "Each patient folder contains:\n"
-            "- `*_t1.nii` - T1-weighted\n"
-            "- `*_t2.nii` - T2-weighted\n"
-            "- `*_t1ce.nii` - Contrast-enhanced\n"
-            "- `*_flair.nii` - FLAIR\n"
-            "- `*_seg.nii` - Segmentation mask (optional)"
-        )
-    
-    if run_button:
-        missing_mods = [mod for mod, file in uploaded_files.items() if file is None]
-        
-        if missing_mods:
-            st.error(f"Missing modalities: {', '.join(missing_mods)}")
-        else:
-            with st.spinner("Processing MRI data... This may take a moment."):
-                try:
-                    # Load all modalities
-                    slices = {}
-                    for mod, file in uploaded_files.items():
-                        data, _ = load_nifti_slice(file, slice_num)
-                        slices[mod] = data
-                    
-                    # Prepare input tensor
-                    t1 = slices["T1"]
-                    t2 = slices["T2"]
-                    t1ce = slices["T1ce"]
-                    flair = slices["FLAIR"]
-                    
-                    # Normalize each modality
-                    for key in slices:
-                        slices[key] = (slices[key] - slices[key].min()) / (slices[key].max() - slices[key].min() + 1e-8)
-                    
-                    # Create 4-channel input
-                    image = np.stack([slices["T1"], slices["T2"], slices["T1ce"], slices["FLAIR"]], axis=0)
-                    image_tensor = torch.tensor(image).float().unsqueeze(0).to(st.session_state.device)
-                    
-                    # Load or create model
-                    if st.session_state.model is None:
-                        st.session_state.model = BrainTumorSegmentationModel().to(st.session_state.device)
-                        st.session_state.model.eval()
-                    
-                    # Run inference
-                    with torch.no_grad():
-                        prediction = st.session_state.model(image_tensor).cpu().numpy()
-                    
-                    pred_mask = (prediction[0, 0] > 0.5).astype(float)
-                    pred_prob = prediction[0, 0]
-                    
-                    # Uncertainty estimation if enabled
-                    if use_mc_dropout:
-                        if st.session_state.mc_model is None:
-                            st.session_state.mc_model = BrainTumorSegModelWithDropout().to(st.session_state.device)
-                            st.session_state.mc_model.eval()
-                        
-                        mean_pred, uncertainty = mc_dropout_predict(
-                            st.session_state.mc_model, image_tensor, n_passes=n_passes
-                        )
-                        pred_prob = mean_pred[0, 0]
-                        pred_mask = (pred_prob > 0.5).astype(float)
-                        uncertainty_map = uncertainty[0, 0]
-                    else:
-                        uncertainty_map = None
-                    
-                    # Modality corruption detection
-                    flags, reliability, alert = detect_modality_corruption(image_tensor)
-                    
-                    # Store results in session state
-                    st.session_state.seg_results = {
-                        "mri": slices["FLAIR"],
-                        "pred_mask": pred_mask,
-                        "pred_prob": pred_prob,
-                        "uncertainty": uncertainty_map,
-                        "reliability": reliability,
-                        "alert": alert
-                    }
-                    
-                    # Display cross-modal alert
-                    if "MODALITY ALERT" in alert:
-                        st.warning(alert)
-                    else:
-                        st.success(alert)
-                    
-                    # Results display
-                    st.markdown("---")
-                    st.markdown("## 📊 Segmentation Results")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("### 🖼️ Input MRI (FLAIR)")
-                        fig, ax = plt.subplots(figsize=(6, 6))
-                        ax.imshow(slices["FLAIR"], cmap="gray")
-                        ax.axis("off")
-                        st.pyplot(fig)
-                        plt.close()
-                    
-                    with col2:
-                        st.markdown("### 🔬 Segmentation Mask")
-                        fig, ax = plt.subplots(figsize=(6, 6))
-                        ax.imshow(slices["FLAIR"], cmap="gray")
-                        ax.imshow(pred_mask, cmap="Reds", alpha=0.5)
-                        ax.axis("off")
-                        st.pyplot(fig)
-                        plt.close()
-                    
-                    # Metrics display
-                    if uploaded_files.get("seg") is not None:
-                        seg_data, _ = load_nifti_slice(uploaded_files["seg"], slice_num)
-                        gt_mask = (seg_data > 0).astype(float)
-                        
-                        dice, iou, precision, recall, accuracy = evaluate_metrics(pred_mask, gt_mask)
-                        
-                        st.markdown("### 📈 Segmentation Metrics")
-                        metric_cols = st.columns(5)
-                        metrics_data = [
-                            ("🎲 Dice", f"{dice:.4f}"),
-                            ("📐 IoU", f"{iou:.4f}"),
-                            ("🎯 Precision", f"{precision:.4f}"),
-                            ("📞 Recall", f"{recall:.4f}"),
-                            ("✅ Accuracy", f"{accuracy:.4f}")
-                        ]
-                        
-                        for col, (label, value) in zip(metric_cols, metrics_data):
-                            col.markdown(f"""
-                            <div class="metric-card">
-                                <h3>{label}</h3>
-                                <h2 style="color: #00ff88;">{value}</h2>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        # Overlay comparison
-                        st.markdown("### 🔄 Ground Truth vs Prediction")
-                        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-                        axes[0].imshow(slices["FLAIR"], cmap="gray")
-                        axes[0].imshow(gt_mask, cmap="Greens", alpha=0.5)
-                        axes[0].set_title("Ground Truth")
-                        axes[0].axis("off")
-                        axes[1].imshow(slices["FLAIR"], cmap="gray")
-                        axes[1].imshow(pred_mask, cmap="Reds", alpha=0.5)
-                        axes[1].set_title("Prediction")
-                        axes[1].axis("off")
-                        st.pyplot(fig)
-                        plt.close()
-                    else:
-                        st.info("Upload the segmentation mask (.seg.nii) for metric calculation")
-                    
-                    # Uncertainty map
-                    if uncertainty_map is not None:
-                        st.markdown("### 📊 Uncertainty Heatmap")
-                        fig, ax = plt.subplots(figsize=(8, 6))
-                        im = ax.imshow(uncertainty_map, cmap="hot")
-                        ax.set_title("Model Uncertainty (brighter = less confident)")
-                        ax.axis("off")
-                        plt.colorbar(im, ax=ax)
-                        st.pyplot(fig)
-                        plt.close()
-                    
-                    # Reliability scores
-                    st.markdown("### 📡 Modality Reliability Scores")
-                    rel_cols = st.columns(4)
-                    mod_names = ["T1", "T2", "T1ce", "FLAIR"]
-                    colors = ["#3498db", "#2ecc71", "#e74c3c", "#f39c12"]
-                    
-                    for col, name, score, color in zip(rel_cols, mod_names, reliability, colors):
-                        col.markdown(f"""
-                        <div style="text-align: center;">
-                            <h3>{name}</h3>
-                            <div style="background: #2d2d3a; border-radius: 10px; padding: 10px;">
-                                <div style="background: {color}; width: {score*100}%; height: 30px; border-radius: 5px;"></div>
-                                <p style="margin-top: 5px;">{score:.3f}</p>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                except Exception as e:
-                    st.error(f"Error processing images: {str(e)}")
-
-
-# ============================================================
-# Page: Novel Features
-# ============================================================
-
-elif page == "🎯 Novel Features":
-    st.markdown("## 🔬 Novel Research Features")
-    st.markdown("Three innovative contributions not found in existing literature")
-    
-    tab1, tab2, tab3 = st.tabs([
-        "📊 Uncertainty Heatmap", 
-        "🧬 Tumor Personality Profiling", 
-        "🚨 Cross-Modal Detection"
-    ])
-    
-    with tab1:
-        st.markdown("""
-        ### 📊 Novel Feature 1: Uncertainty-Aware Confidence Heatmap
-        
-        Using **Monte Carlo Dropout** (Gal & Ghahramani, ICML 2016), we run inference 
-        multiple times with dropout enabled to estimate pixel-wise uncertainty.
-        
-        **Clinical Value:** Highlights regions where the model is uncertain, helping 
-        radiologists focus on areas requiring manual review.
-        """)
-        
-        if 'seg_results' in st.session_state and st.session_state.seg_results.get('uncertainty') is not None:
-            results = st.session_state.seg_results
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**FLAIR MRI**")
-                fig, ax = plt.subplots(figsize=(5, 5))
-                ax.imshow(results["mri"], cmap="gray")
-                ax.axis("off")
-                st.pyplot(fig)
-                plt.close()
-            
-            with col2:
-                st.markdown("**Uncertainty Map**")
-                fig, ax = plt.subplots(figsize=(5, 5))
-                im = ax.imshow(results["uncertainty"], cmap="hot")
-                ax.axis("off")
-                plt.colorbar(im, ax=ax)
-                st.pyplot(fig)
-                plt.close()
-            
-            st.info(
-                f"High uncertainty pixels: {(results['uncertainty'] > results['uncertainty'].mean()).sum():.0f} | "
-                f"Low uncertainty pixels: {(results['uncertainty'] <= results['uncertainty'].mean()).sum():.0f}\n\n"
-                "✨ Bright regions indicate where the model is unsure - prioritize these areas for expert review."
-            )
-        else:
-            st.info("Run segmentation first to see uncertainty heatmap")
-    
-    with tab2:
-        st.markdown("""
-        ### 🧬 Novel Feature 2: Tumor Personality Profiling
-        
-        **Radiomics-Deep Learning Fusion** - Extracting handcrafted radiomic features 
-        from the predicted tumor mask to infer tumor grade and aggressiveness.
-        
-        **Features Extracted:**
-        - Intensity statistics (mean, std, skewness, kurtosis)
-        - Morphological features (area, connectivity, solidity)  
-        - Texture analysis (GLCM energy proxy)
-        """)
-        
-        if 'seg_results' in st.session_state:
-            results = st.session_state.seg_results
-            features = extract_radiomics(results["mri"], results["pred_mask"])
-            
-            if features:
-                score, label = tumor_aggressiveness_score(features)
-                
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h3>🧠 Tumor Profile</h3>
-                    <h2>{label}</h2>
-                    <p>Aggressiveness Score: {score}/100</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**📊 Radiomic Features**")
-                    feat_data = {
-                        "Mean Intensity": f"{features['mean_intensity']:.4f}",
-                        "Std Intensity": f"{features['std_intensity']:.4f}",
-                        "Skewness": f"{features['skewness']:.4f}",
-                        "Kurtosis": f"{features['kurtosis']:.4f}"
-                    }
-                    for name, value in feat_data.items():
-                        st.metric(name, value)
-                
-                with col2:
-                    st.markdown("**📏 Morphological Features**")
-                    morph_data = {
-                        "Tumor Area": f"{features['tumor_area_pixels']} px",
-                        "Connected Components": f"{features['num_connected_comp']}",
-                        "Solidity": f"{features['solidity']:.4f}",
-                        "Texture Energy": f"{features['texture_energy']:.4f}"
-                    }
-                    for name, value in morph_data.items():
-                        st.metric(name, value)
-                
-                # Feature visualization
-                fig, ax = plt.subplots(figsize=(10, 5))
-                feat_names = ["Mean Int", "Std Int", "Skewness", "Kurtosis", "Solidity", "Texture"]
-                feat_vals = [
-                    features["mean_intensity"] / 2,
-                    features["std_intensity"] * 10,
-                    abs(features["skewness"]),
-                    min(features["kurtosis"], 5),
-                    features["solidity"],
-                    features["texture_energy"] * 10
-                ]
-                colors = ['#e74c3c' if v > 0.4 else '#3498db' for v in feat_vals]
-                ax.bar(feat_names, feat_vals, color=colors)
-                ax.set_title("Normalized Radiomic Profile")
-                ax.set_ylabel("Normalized Value")
-                ax.tick_params(axis='x', rotation=20)
-                st.pyplot(fig)
-                plt.close()
-            else:
-                st.warning("No tumor detected in the current slice")
-        else:
-            st.info("Run segmentation first to see tumor profile")
-    
-    with tab3:
-        st.markdown("""
-        ### 🚨 Novel Feature 3: Cross-Modal Hallucination Detection
-        
-        **Graceful Degradation System** - Automatically detects corrupted or missing 
-        MRI modalities and redistributes attention to reliable channels.
-        
-        **This is the first implementation of modality corruption detection in BraTS!**
-        """)
-        
-        if 'seg_results' in st.session_state:
-            results = st.session_state.seg_results
-            
-            st.markdown("### 📡 Current Modality Health Status")
-            
-            mod_names = ["T1", "T2", "T1ce", "FLAIR"]
-            rel_scores = results["reliability"]
-            
-            cols = st.columns(4)
-            for col, name, score in zip(cols, mod_names, rel_scores):
-                color = "🟢" if score > 0.7 else "🟡" if score > 0.4 else "🔴"
-                col.markdown(f"""
-                <div style="text-align: center; padding: 10px; background: #1e1e2f; border-radius: 10px;">
-                    <h3>{color} {name}</h3>
-                    <p style="font-size: 24px; font-weight: bold;">{score:.3f}</p>
-                    <p>Reliability Score</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            if "MODALITY ALERT" in results["alert"]:
-                st.warning(results["alert"])
-            else:
-                st.success(results["alert"])
-            
-            st.markdown("### 🔬 Technical Explanation")
-            st.markdown("""
-            The system calculates a Signal-to-Noise Ratio (SNR) for each modality:
-            
-            1. **Detect corruption** via Z-score analysis of SNR
-            2. **Calculate reliability** using sigmoid-weighted relative SNR
-            3. **Redistribute attention** - corrupted channels receive near-zero weight
-            4. **Raise clinical alert** when degradation is detected
-            
-            This ensures robust performance even with incomplete or low-quality MRI scans.
-            """)
-        else:
-            st.info("Run segmentation first to see modality analysis")
-
-
-# ============================================================
-# Page: Performance
-# ============================================================
-
-elif page == "📈 Performance":
-    st.markdown("## 📊 Model Performance Metrics")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 🎯 Segmentation Metrics")
-        
-        metrics = {
-            "Dice Score": 0.933,
-            "IoU": 0.875,
-            "Precision": 0.882,
-            "Recall": 0.990,
-            "Accuracy": 0.997
-        }
-        
-        for name, value in metrics.items():
-            st.metric(name, f"{value:.4f}")
-        
-        st.markdown("""
-        ### 📈 Training Progress
-        
-        The model was trained for 40 epochs with Dice + BCE loss.
-        
-        **Loss Progression:**
-        - Epoch 1: 0.883
-        - Epoch 10: 0.295
-        - Epoch 20: 0.200
-        - Epoch 30: 0.180
-        - Epoch 40: 0.217
-        """)
-    
-    with col2:
-        st.markdown("### 🔬 Ablation Study")
-        
-        ablation_data = {
-            "Baseline U-Net": 0.85,
-            "+ Attention Gate": 0.89,
-            "+ Modality Reliability": 0.91,
-            "+ Full Model": 0.93
-        }
-        
-        fig, ax = plt.subplots(figsize=(8, 5))
-        models = list(ablation_data.keys())
-        scores = list(ablation_data.values())
-        colors = ['#95a5a6', '#3498db', '#f39c12', '#2ecc71']
-        ax.bar(models, scores, color=colors)
-        ax.set_ylabel("Dice Score")
-        ax.set_title("Ablation Study Results")
-        ax.set_ylim(0.8, 1.0)
-        for i, v in enumerate(scores):
-            ax.text(i, v + 0.005, f"{v:.2f}", ha='center', fontweight='bold')
-        plt.xticks(rotation=15)
-        st.pyplot(fig)
-        plt.close()
-        
-        st.markdown("""
-        ### 📋 Comparison with Literature
-        
-        | Method | Dice Score |
-        |--------|------------|
-        | Standard U-Net | 0.85 |
-        | Attention U-Net | 0.89 |
-        | nnU-Net | 0.91 |
-        | **Our Model** | **0.93** |
-        """)
-    
-    st.markdown("---")
-    st.markdown("### 🧪 Validation on BraTS 2020")
-    
-    st.markdown("""
-    **Dataset:** BraTS 2020 Training + Validation (369 patients)
-    
-    **Cross-Validation Results (5-fold):**
-    - Fold 1: Dice = 0.928
-    - Fold 2: Dice = 0.935
-    - Fold 3: Dice = 0.931
-    - Fold 4: Dice = 0.929
-    - Fold 5: Dice = 0.934
-    - **Mean ± Std: 0.931 ± 0.003**
-    
-    **Statistical Significance:**
-    - Paired t-test vs. baseline U-Net: p < 0.001
-    - Cohen's d = 1.24 (large effect size)
-    """)
-
-
-# ============================================================
-# Page: References
-# ============================================================
-
-else:
-    st.markdown("## 📚 Scientific References")
-    
-    st.markdown("""
-    ### Core Architecture Papers
-    
-    1. **Ronneberger et al. (2015)** — *U-Net: Convolutional Networks for Biomedical Image Segmentation*.  
-       MICCAI 2015. [DOI: 10.1007/978-3-319-24574-4_28](https://doi.org/10.1007/978-3-319-24574-4_28)
-    
-    2. **Oktay et al. (2018)** — *Attention U-Net: Learning Where to Look for the Pancreas*.  
-       MIDL 2018. [arXiv:1804.03999](https://arxiv.org/abs/1804.03999)
-    
-    3. **Isensee et al. (2021)** — *nnU-Net: A Self-Configuring Method for Deep Learning-Based Biomedical Image Segmentation*.  
-       Nature Methods. [DOI: 10.1038/s41592-020-01008-z](https://doi.org/10.1038/s41592-020-01008-z)
-    
-    ### Explainable AI
-    
-    4. **Selvaraju et al. (2017)** — *Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization*.  
-       ICCV 2017. [arXiv:1610.02391](https://arxiv.org/abs/1610.02391)
-    
-    5. **Gal & Ghahramani (2016)** — *Dropout as a Bayesian Approximation: Representing Model Uncertainty in Deep Learning*.  
-       ICML 2016. [DOI: 10.48550/arXiv.1506.02142](https://doi.org/10.48550/arXiv.1506.02142)
-    
-    ### Medical Imaging & Radiomics
-    
-    6. **Menze et al. (2015)** — *The Multimodal Brain Tumor Image Segmentation Benchmark (BraTS)*.  
-       IEEE TMI. [DOI: 10.1109/TMI.2014.2377694](https://doi.org/10.1109/TMI.2014.2377694)
-    
-    7. **Lambin et al. (2017)** — *Radiomics: The bridge between medical imaging and personalized medicine*.  
-       Nature Reviews Clinical Oncology. [DOI: 10.1038/nrclinonc.2017.141](https://doi.org/10.1038/nrclinonc.2017.141)
-    
-    ### Advanced Architectures
-    
-    8. **Hu et al. (2018)** — *Squeeze-and-Excitation Networks*.  
-       CVPR 2018. [arXiv:1709.01507](https://arxiv.org/abs/1709.01507)
-    
-    9. **Kendall & Gal (2017)** — *What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?*.  
-       NeurIPS 2017. [arXiv:1703.04977](https://arxiv.org/abs/1703.04977)
-    
-    10. **Myronenko (2018)** — *3D MRI Brain Tumor Segmentation Using Autoencoder Regularization*.  
-        BrainLes Workshop 2018. [arXiv:1810.11654](https://arxiv.org/abs/1810.11654)
-    """)
-    
-    st.markdown("---")
-    st.markdown("### 🎯 How to Cite")
-    
-    st.code("""
-    @software{brain_tumor_segmentation_2024,
-        author = {Tiya Golyan},
-        title = {Brain Tumor Segmentation with Attention U-Net and Explainable AI},
-        year = {2024},
-        url = {https://github.com/yourusername/brain-tumor-segmentation}
-    }
-    """, language="text")
-
-
-# ============================================================
-# Footer
-# ============================================================
-
-st.markdown("---")
-st.markdown(
-    "<p style='text-align: center; color: #888;'>© 2024 Brain Tumor Segmentation Dashboard | Powered by PyTorch & Streamlit</p>",
-    unsafe_allow_html=True
-)
+if __name__ == "__main__":
+    main()
